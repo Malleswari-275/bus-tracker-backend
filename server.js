@@ -4,9 +4,6 @@
  * Node.js v22 compatible
  */
 
-/* ============================
-   Load environment variables
-   ============================ */
 require("dotenv").config();
 
 const express = require("express");
@@ -29,13 +26,13 @@ app.use(express.json());
    ============================ */
 const io = new Server(server, {
   cors: {
-    origin: "*", // OK for prototype
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
 
 /* ============================
-   MongoDB Connection (Atlas)
+   MongoDB Connection
    ============================ */
 if (!process.env.MONGO_URI) {
   console.error("❌ MONGO_URI is not defined");
@@ -62,47 +59,62 @@ const BusSchema = new mongoose.Schema({
 const Bus = mongoose.model("Bus", BusSchema);
 
 /* ============================
-   Health Check Route
+   Health Check
    ============================ */
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
 /* ============================
-   Socket.IO Logic
+   Throttle Control
    ============================ */
-socket.on("location:update", async (data) => {
-  try {
-    console.log("📍 Location received:", data);
+const lastBroadcastTime = {};
 
-    const { busId, lat, lng } = data;
+/* ============================
+   Socket.IO Logic (IMPORTANT)
+   ============================ */
+io.on("connection", (socket) => {
+  console.log("🟢 Client connected:", socket.id);
 
-    if (!busId || lat == null || lng == null) {
-      console.warn("⚠️ Invalid location payload");
-      return;
+  socket.on("location:update", async (data) => {
+    try {
+      console.log("📍 Location received:", data);
+
+      const { busId, lat, lng } = data;
+
+      if (!busId || lat == null || lng == null) {
+        console.warn("⚠️ Invalid location payload");
+        return;
+      }
+
+      // Save latest location
+      await Bus.findOneAndUpdate(
+        { busId },
+        { lat, lng, updatedAt: new Date() },
+        { upsert: true, new: true }
+      );
+
+      // Throttle broadcasts (every 3 seconds)
+      const now = Date.now();
+      if (
+        lastBroadcastTime[busId] &&
+        now - lastBroadcastTime[busId] < 3000
+      ) {
+        return;
+      }
+
+      lastBroadcastTime[busId] = now;
+
+      // Broadcast to viewers
+      io.emit("location:broadcast", data);
+    } catch (err) {
+      console.error("❌ Error handling location update:", err);
     }
+  });
 
-    await Bus.findOneAndUpdate(
-      { busId },
-      { lat, lng, updatedAt: new Date() },
-      { upsert: true, new: true }
-    );
-
-    const now = Date.now();
-
-    if (
-      lastBroadcastTime[busId] &&
-      now - lastBroadcastTime[busId] < 3000
-    ) {
-      return;
-    }
-
-    lastBroadcastTime[busId] = now;
-
-    io.emit("location:broadcast", data);
-  } catch (err) {
-    console.error("❌ Error handling location update:", err);
-  }
+  socket.on("disconnect", () => {
+    console.log("🔴 Client disconnected:", socket.id);
+  });
 });
 
 /* ============================
