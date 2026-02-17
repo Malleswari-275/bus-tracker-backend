@@ -71,37 +71,38 @@ app.get("/", (req, res) => {
 /* ============================
    Socket.IO Logic
    ============================ */
-io.on("connection", (socket) => {
-  console.log("🟢 Client connected:", socket.id);
+socket.on("location:update", async (data) => {
+  try {
+    console.log("📍 Location received:", data);
 
-  socket.on("location:update", async (data) => {
-    try {
-      console.log("📍 Location received:", data);
+    const { busId, lat, lng } = data;
 
-      const { busId, lat, lng } = data;
-
-      if (!busId || lat == null || lng == null) {
-        console.warn("⚠️ Invalid location payload");
-        return;
-      }
-
-      // Store latest bus location
-      await Bus.findOneAndUpdate(
-        { busId },
-        { lat, lng, updatedAt: new Date() },
-        { upsert: true, new: true }
-      );
-
-      // Broadcast to all viewers
-      io.emit("location:broadcast", data);
-    } catch (err) {
-      console.error("❌ Error handling location update:", err);
+    if (!busId || lat == null || lng == null) {
+      console.warn("⚠️ Invalid location payload");
+      return;
     }
-  });
 
-  socket.on("disconnect", () => {
-    console.log("🔴 Client disconnected:", socket.id);
-  });
+    await Bus.findOneAndUpdate(
+      { busId },
+      { lat, lng, updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+
+    const now = Date.now();
+
+    if (
+      lastBroadcastTime[busId] &&
+      now - lastBroadcastTime[busId] < 3000
+    ) {
+      return;
+    }
+
+    lastBroadcastTime[busId] = now;
+
+    io.emit("location:broadcast", data);
+  } catch (err) {
+    console.error("❌ Error handling location update:", err);
+  }
 });
 
 /* ============================
