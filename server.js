@@ -1,8 +1,13 @@
 /**
  * Live Bus Tracking Backend
- * Express + MongoDB + Socket.IO
+ * Express + MongoDB Atlas + Socket.IO
  * Node.js v22 compatible
  */
+
+/* ============================
+   Load environment variables
+   ============================ */
+require("dotenv").config();
 
 const express = require("express");
 const http = require("http");
@@ -14,25 +19,35 @@ const app = express();
 const server = http.createServer(app);
 
 /* ============================
-   Socket.IO Setup
+   Middleware
    ============================ */
-const io = new Server(server, {
-  cors: {
-    origin: "*", // allow frontend from anywhere (dev only)
-    methods: ["GET", "POST"],
-  },
-});
-
 app.use(cors());
 app.use(express.json());
 
 /* ============================
-   MongoDB Connection
+   Socket.IO Setup
    ============================ */
+const io = new Server(server, {
+  cors: {
+    origin: "*", // OK for prototype
+    methods: ["GET", "POST"],
+  },
+});
+
+/* ============================
+   MongoDB Connection (Atlas)
+   ============================ */
+if (!process.env.MONGO_URI) {
+  console.error("❌ MONGO_URI is not defined");
+  process.exit(1);
+}
+
 mongoose
-  .connect("mongodb://127.0.0.1:27017/bus_tracker")
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+  .catch((err) =>
+    console.error("❌ MongoDB connection error:", err)
+  );
 
 /* ============================
    MongoDB Schema
@@ -47,7 +62,7 @@ const BusSchema = new mongoose.Schema({
 const Bus = mongoose.model("Bus", BusSchema);
 
 /* ============================
-   Test HTTP Route
+   Health Check Route
    ============================ */
 app.get("/", (req, res) => {
   res.send("Backend is running");
@@ -70,7 +85,7 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Save latest bus location
+      // Store latest bus location
       await Bus.findOneAndUpdate(
         { busId },
         { lat, lng, updatedAt: new Date() },
@@ -90,11 +105,10 @@ io.on("connection", (socket) => {
 });
 
 /* ============================
-   Start Server (PUBLIC)
+   Start Server
    ============================ */
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
