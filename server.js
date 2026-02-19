@@ -63,8 +63,8 @@ const Bus = mongoose.model("Bus", BusSchema);
    ============================ */
 const DESTINATION = {
   name: "Cotton Statue",
-  lat: 16.964975,
-  lng: 82.035615,
+  lat: 17.088518,
+  lng: 82.068674,
 };
 
 /* ============================
